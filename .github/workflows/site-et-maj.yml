@@ -1,0 +1,58 @@
+# Robot du site Immo Versailles :
+#  - à chaque modification du code → republie le site
+#  - tous les 1ers du mois → va voir si l'État a publié de nouvelles ventes DVF ;
+#    si oui, les intègre et republie le site tout seul.
+name: Site et mise à jour des données
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 1 * *"   # le 1er de chaque mois à 6h (UTC)
+  workflow_dispatch:        # bouton "lancer maintenant" à la main
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mettre à jour les données DVF
+        run: python3 scripts/build_data.py
+
+      - name: Enregistrer les nouvelles données (s'il y en a)
+        run: |
+          git config user.name "robot-immo-versailles"
+          git config user.email "actions@github.com"
+          git add app/data data/raw
+          if ! git diff --cached --quiet; then
+            git commit -m "Mise à jour automatique des données DVF"
+            git push
+          else
+            echo "Pas de nouvelles données."
+          fi
+
+      - name: Préparer le site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: app
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publier le site
+        id: deployment
+        uses: actions/deploy-pages@v4
